@@ -2773,9 +2773,10 @@ void Steam_Overlay::steam_run_callback_update_my_lobby()
 {
     std::lock_guard<std::recursive_mutex> lock(global_mutex);
     Steam_Friends* steamFriends = get_steam_client()->steam_friends;
+    // Explicit invite-dialog lobbies can be invisible and absent from settings->get_lobby().
     if (std::string(steamFriends->get_friend_rich_presence_silent(settings->get_local_steam_id(), "connect")).length() > 0) {
         i_have_lobby = true;
-    } else if (settings->get_lobby().IsValid()) {
+    } else if (CSteamID(invite_lobby_id.load(std::memory_order_relaxed)).IsValid() || settings->get_lobby().IsValid()) {
         i_have_lobby = true;
     } else {
         i_have_lobby = false;
