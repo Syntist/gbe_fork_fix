@@ -602,8 +602,8 @@ bool Networking::handle_tcp(Common_Message *msg, struct TCP_Socket &socket)
 
 struct Connection *Networking::find_connection(CSteamID search_id, uint32 appid)
 {
-    auto conn = std::find_if(connections.begin(), connections.end(), [&search_id, appid](struct Connection const& conn) { 
-        if (appid && (conn.appid != appid)) return false;
+    auto conn = std::find_if(connections.begin(), connections.end(), [this, &search_id, appid](struct Connection const& conn) {
+        if (appid && this->appid != LOBBY_CONNECT_APPID && conn.appid != appid) return false;
 
         for (const auto &id: conn.ids) {
             if (search_id == id) return true;
@@ -1066,7 +1066,7 @@ void Networking::Run()
         if (conn.tcp_socket_incoming.received_data || conn.tcp_socket_outgoing.received_data) {
             if (!conn.connected) {
                 //reconnect the connection if it has the right appid
-                if (conn.appid == this->appid || conn.appid == LOBBY_CONNECT_APPID) {
+                if (conn.appid == this->appid || conn.appid == LOBBY_CONNECT_APPID || this->appid == LOBBY_CONNECT_APPID) {
                     for (auto &c: connections) {
                         if (&c == &conn) continue;
                         if (c.appid != this->appid) continue;
@@ -1293,8 +1293,8 @@ void Networking::run_callbacks(Callback_Ids id, Common_Message *msg)
 
 void Networking::run_callback_user(CSteamID steam_id, bool online, uint32 appid)
 {
-    //only give callbacks for right game accounts
-    if (steam_id.BIndividualAccount() && appid != this->appid && appid != LOBBY_CONNECT_APPID) return;
+    // Only give callbacks for matching game accounts, except for Lobby Connect.
+    if (steam_id.BIndividualAccount() && this->appid != LOBBY_CONNECT_APPID && appid != this->appid && appid != LOBBY_CONNECT_APPID) return;
 
     Common_Message msg{};
     msg.set_source_id(steam_id.ConvertToUint64());
