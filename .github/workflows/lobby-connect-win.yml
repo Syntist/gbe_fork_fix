@@ -1,0 +1,110 @@
+name: "Build Lobby Connect (Windows)"
+
+on:
+  push:
+    branches: ["fix/lobby-connect-cross-appid"]
+    paths:
+      - ".github/workflows/lobby-connect-win.yml"
+      - ".github/workflows/emu-deps-win.yml"
+      - "dll/**"
+      - "tools/lobby_connect/**"
+      - "premake5*.lua"
+  workflow_call:
+    # needed since it allows this to become a reusable workflow
+  workflow_dispatch:
+    # allows manual trigger
+
+permissions:
+  contents: "write"
+
+env:
+  PREMAKE_ACTION: "vs2026"
+  DEPS_CACHE_KEY: "emu-deps-win"
+  DEPS_CACHE_DIR: "build/deps/win"
+
+  THIRD_PARTY_BASE_DIR: "third-party"
+
+  # https://docs.github.com/en/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for-public-repositories
+  MAX_PARALLEL_JOBS: 4
+
+jobs:
+  deps:
+    name: "Restore or build deps"
+    if: ${{ !cancelled() }}
+    uses: "./.github/workflows/emu-deps-win.yml"
+
+  builds-matrix-win:
+    name: "build"
+    needs: ["deps"]
+    runs-on: "windows-2025-vs2026"
+
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ["x64", "Win32"]
+        cfg: ["release"]
+
+    steps:
+      # clone branch
+      - name: "Checkout branch"
+        uses: actions/checkout@v6
+
+      # ensure we have msbuild
+      - name: "Add MSBuild to PATH"
+        uses: microsoft/setup-msbuild@v3
+
+      # on Windows Git will auto change line ending to CRLF, not preferable
+      - name: "Ensure LF line ending"
+        shell: "cmd"
+        working-directory: "${{ github.workspace }}"
+        run: |
+          git config --local core.autocrlf false
+          git config --system core.autocrlf false
+          git config --global core.autocrlf false
+
+      # deps
+      - name: "Restore deps"
+        id: "emu-deps-cache-step"
+        uses: actions/cache@v5
+        with:
+          key: "${{ env.DEPS_CACHE_KEY }}-${{ env.PREMAKE_ACTION }}"
+          path: "${{ env.DEPS_CACHE_DIR }}/${{ env.PREMAKE_ACTION }}"
+
+      # extra helpers/tools, these are not built inside the deps build dir
+      - name: "Clone third-party build helpers (common/win)"
+        uses: actions/checkout@v6
+        with:
+          repository: Detanup01/gbe_fork
+          ref: "third-party/common/win"
+          path: "${{env.THIRD_PARTY_BASE_DIR}}/common/win"
+
+      - name: "Clone third-party deps (build/win)"
+        uses: actions/checkout@v6
+        with:
+          repository: Detanup01/gbe_fork
+          ref: "third-party/build/win"
+          path: "${{env.THIRD_PARTY_BASE_DIR}}/build/win"
+
+      # generate project files
+      - name: "Generate project files"
+        shell: "cmd"
+        working-directory: "${{ github.workspace }}"
+        run: |
+          "${{env.THIRD_PARTY_BASE_DIR}}\common\win\premake\premake5.exe" --file=premake5.lua --genproto --emubuild=${{ github.sha }} --dosstub --winrsrc --winsign --os=windows vs2026
+
+      # build target
+      - name: "Build target"
+        shell: "cmd"
+        working-directory: "${{ github.workspace }}/build/project/vs2026/win"
+        run: |
+          msbuild /nologo /target:tool_lobby_connect /m:1 -p:CL_MPCount=${{ env.MAX_PARALLEL_JOBS }} /v:n /p:Configuration=${{ matrix.cfg }},Platform=${{ matrix.arch }} gbe.slnx
+
+      # upload artifact/package to github Actions
+      - name: "Upload target package"
+        uses: actions/upload-artifact@v7
+        with:
+          name: "lobby-connect-win-${{ matrix.cfg }}-${{ matrix.arch }}-${{ github.sha }}"
+          path: "build/win/vs2026/release/tools/lobby_connect/"
+          if-no-files-found: "error"
+          compression-level: 9
+          retention-days: 7
