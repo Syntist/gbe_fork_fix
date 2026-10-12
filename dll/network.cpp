@@ -603,7 +603,8 @@ bool Networking::handle_tcp(Common_Message *msg, struct TCP_Socket &socket)
 struct Connection *Networking::find_connection(CSteamID search_id, uint32 appid)
 {
     auto conn = std::find_if(connections.begin(), connections.end(), [this, &search_id, appid](struct Connection const& conn) {
-        if (appid && this->appid != LOBBY_CONNECT_APPID && conn.appid != appid) return false;
+        // Lobby Connect exchanges friend/lobby details with games using other AppIDs.
+        if (appid && this->appid != LOBBY_CONNECT_APPID && conn.appid != LOBBY_CONNECT_APPID && conn.appid != appid) return false;
 
         for (const auto &id: conn.ids) {
             if (search_id == id) return true;
